@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Café POS</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --border: #e4e0d8;
+    --border2: #c8c3b8;
+    --text: #1a1916;
+    --muted: #7a7670;
+    --accent: #2d6a4f;
+    --accent-light: #e8f5ee;
+    --amber: #b45309;
+    --amber-light: #fef3c7;
+    --red: #991b1b;
+    --red-light: #fee2e2;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Georgia', serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body.sans { font-family: -apple-system, 'Segoe UI', sans-serif; }
+
+  /* ── NAV ── */
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; gap: 0; height: 52px; }
+  .nav-logo { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; margin-right: 24px; color: var(--text); }
+  .nav-tab { font-size: 13px; padding: 0 16px; height: 52px; display: flex; align-items: center; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); transition: all .15s; background: none; border-left: none; border-right: none; border-top: none; }
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .webhook-input { font-size: 12px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); width: 260px; outline: none; }
+  .webhook-input:focus { border-color: var(--accent); }
+  .status-pill { font-size: 11px; padding: 3px 10px; border-radius: 99px; background: var(--border); color: var(--muted); white-space: nowrap; }
+  .status-pill.ok { background: var(--accent-light); color: var(--accent); }
+
+  /* ── PAGES ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── POS LAYOUT ── */
+  .pos-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 0; height: calc(100vh - 52px); }
+  .pos-left { overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .pos-right { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto; }
+
+  /* ── SECTION LABEL ── */
+  .label { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+
+  /* ── CATEGORY TABS ── */
+  .cat-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cat-btn { font-size: 12px; padding: 5px 14px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); cursor: pointer; transition: all .15s; font-family: inherit; }
+  .cat-btn:hover { border-color: var(--border2); color: var(--text); }
+  .cat-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ── MENU GRID ── */
+  .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .menu-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 10px; cursor: pointer; text-align: center; transition: all .15s; user-select: none; }
+  .menu-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .menu-card:active { transform: scale(.97); }
+  .menu-card .mc-icon { font-size: 24px; margin-bottom: 6px; line-height: 1; }
+  .menu-card .mc-name { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .menu-card .mc-price { font-size: 11px; color: var(--muted); }
+  .menu-card .mc-stock { font-size: 10px; margin-top: 3px; }
+  .menu-card.low-stock { border-color: #f59e0b; }
+  .menu-card.out-stock { opacity: .45; pointer-events: none; }
+
+  /* ── ORDER PANEL ── */
+  .order-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .order-empty { text-align: center; padding: 40px 0; color: var(--muted); font-size: 13px; }
+  .order-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .order-row:last-child { border-bottom: none; }
+  .or-name { flex: 1; font-weight: 600; font-size: 12px; }
+  .or-price { font-size: 12px; color: var(--muted); min-width: 52px; text-align: right; }
+  .qty-ctrl { display: flex; align-items: center; gap: 4px; }
+  .qty-btn { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border2); background: none; cursor: pointer; font-size: 14px; color: var(--text); display: flex; align-items: center; justify-content: center; line-height: 1; transition: background .1s; }
+  .qty-btn:hover { background: var(--bg); }
+  .qty-num { font-size: 13px; font-weight: 700; min-width: 18px; text-align: center; }
+
+  /* ── TOTALS ── */
+  .totals-box { border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .tot-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  .tot-row.grand { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 4px; font-family: 'Georgia', serif; }
+
+  /* ── PAYMENT BUTTONS ── */
+  .pay-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .pay-btn { font-size: 12px; padding: 9px 4px; border: 1px solid var(--border); border-radius: var(--radius); background: none; cursor: pointer; color: var(--muted); transition: all .15s; font-family: inherit; }
+  .pay-btn:hover { border-color: var(--border2); color: var(--text); }
+  .pay-btn.sel { background: var(--accent-light); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  /* ── CHARGE BUTTON ── */
+  .charge-btn { width: 100%; padding: 13px; border-radius: var(--radius); border: none; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: 'Georgia', serif; letter-spacing: -0.2px; transition: opacity .15s; }
+  .charge-btn:hover { opacity: .9; }
+  .charge-btn:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+  /* ── NOTE ── */
+  .note-box { font-size: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); width: 100%; resize: none; height: 46px; font-family: inherit; color: var(--text); outline: none; }
+  .note-box:focus { border-color: var(--accent); }
+
+  /* ── MENU EDITOR ── */
+  .editor-wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px; }
+  .editor-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .editor-header h2 { font-size: 18px; font-weight: 700; }
+  .btn { font-size: 13px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn:hover { border-color: var(--border2); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { opacity: .9; }
+  .btn.danger { color: var(--red); border-color: #fca5a5; }
+  .btn.danger:hover { background: var(--red-light); }
+  .btn.small { font-size: 11px; padding: 5px 10px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); }
+  thead th { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 10px 14px; text-align: left; background: var(--bg); border-bottom: 1px solid var(--border); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg); }
+  tbody td { padding: 10px 14px; font-size: 13px; }
+  .td-input { font-size: 13px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text); width: 100%; font-family: inherit; outline: none; transition: border .15s; }
+  .td-input:hover { border-color: var(--border); }
+  .td-input:focus { border-color: var(--accent); background: var(--surface); }
+
+  /* ── MODAL ── */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius-lg); padding: 24px; width: 380px; max-width: 90vw; border: 1px solid var(--border); }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .form-row { margin-bottom: 12px; }
+  .form-row label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 4px; }
+  .form-row input, .form-row select { width: 100%; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-family: inherit; outline: none; }
+  .form-row input:focus, .form-row select:focus { border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  /* ── RECEIPT MODAL ── */
+  .receipt { font-family: 'Courier New', monospace; font-size: 12px; background: var(--bg); border-radius: 8px; padding: 16px; margin-bottom: 16px; line-height: 1.8; }
+  .receipt .r-title { text-align: center; font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+  .receipt .r-divider { border-top: 1px dashed var(--border2); margin: 6px 0; }
+  .receipt .r-row { display: flex; justify-content: space-between; }
+  .receipt .r-total { font-weight: 700; font-size: 14px; }
+
+  /* ── TOAST ── */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--text); color: var(--surface); font-size: 13px; padding: 10px 20px; border-radius: 99px; opacity: 0; transition: all .3s; pointer-events: none; z-index: 999; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--red); }
+
+  /* ── SALES LOG ── */
+  .log-wrap { max-width: 960px; margin: 0 auto; padding: 24px 20px; }
+  .log-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .log-filters input, .log-filters select { font-size: 13px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-family: inherit; outline: none; }
+  .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .stat-card .sc-label { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .stat-card .sc-val { font-size: 22px; font-weight: 700; font-family: 'Georgia', serif; }
+  .badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+  .badge.cash { background: var(--accent-light); color: var(--accent); }
+  .badge.card { background: #eff6ff; color: #1e40af; }
+  .badge.ewallet { background: var(--amber-light); color: var(--amber); }
+
+  @media (max-width: 700px) {
+    .pos-wrap { grid-template-columns: 1fr; }
+    .pos-right { border-left: none; border-top: 1px solid var(--border); height: auto; }
+    .stat-cards { grid-template-columns: 1fr 1fr; }
+    nav { overflow-x: auto; }
+    .webhook-input { width: 160px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">☕ Café POS</span>
+  <button class="nav-tab active" onclick="showPage('pos',this)">Order</button>
+  <button class="nav-tab" onclick="showPage('menu',this)">Menu Editor</button>
+  <button class="nav-tab" onclick="showPage('log',this)">Sales Log</button>
+  <div class="nav-right">
+    <input class="webhook-input" id="webhookUrl" placeholder="Paste Apps Script URL…" oninput="saveWebhook(this.value)">
+    <span class="status-pill" id="statusPill">Not configured</span>
+  </div>
+</nav>
+
+<div id="toast" class="toast"></div>
+
+<!-- ══════════ POS PAGE ══════════ -->
+<div id="page-pos" class="page active">
+  <div class="pos-wrap">
+    <div class="pos-left">
+      <div>
+        <div class="label">Category</div>
+        <div class="cat-row" id="catRow"></div>
+      </div>
+      <div>
+        <div class="label">Menu</div>
+        <div class="menu-grid" id="menuGrid"></div>
+      </div>
+    </div>
+    <div class="pos-right">
+      <div class="label">Current order</div>
+      <div class="order-scroll" id="orderScroll">
+        <div class="order-empty" id="orderEmpty">Tap items to add</div>
+      </div>
+      <textarea class="note-box" id="orderNote" placeholder="Order note…"></textarea>
+      <div class="totals-box">
+        <div class="tot-row"><span>Subtotal</span><span id="subtotal">RM 0.00</span></div>
+        <div class="tot-row grand"><span>Total</span><span id="grandTotal">RM 0.00</span></div>
+      </div>
+      <div>
+        <div class="label">Payment</div>
+        <div class="pay-grid">
+          <button class="pay-btn" onclick="selPay('Cash',this)">Cash</button>
+          <button class="pay-btn" onclick="selPay('Card',this)">Card</button>
+          <button class="pay-btn" onclick="selPay('E-wallet',this)">E-wallet</button>
+        </div>
+      </div>
+      <button class="charge-btn" id="chargeBtn" onclick="chargeOrder()" disabled>Charge</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MENU EDITOR PAGE ══════════ -->
+<div id="page-menu" class="page">
+  <div class="editor-wrap">
+    <div class="editor-header">
+      <h2>Menu Editor</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="importFromSheets()">↓ Import from Sheets</button>
+        <button class="btn primary" onclick="openAddModal()">+ Add item</button>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Edit inline — changes save automatically to local storage. Use "Import from Sheets" to pull your live menu from Google Sheets.</p>
+    <table id="menuTable">
+      <thead>
+        <tr>
+          <th>Icon</th><th>Name</th><th>Category</th><th>Price (RM)</th><th>Stock</th><th>Unit</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="menuTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════ SALES LOG PAGE ══════════ -->
+<div id="page-log" class="page">
+  <div class="log-wrap">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="font-size:18px;font-weight:700">Sales Log</h2>
+      <button class="btn" onclick="exportCSV()">↓ Export CSV</button>
+    </div>
+    <div class="stat-cards" id="statCards"></div>
+    <div class="log-filters">
+      <input type="date" id="filterDate" onchange="renderLog()">
+      <select id="filterPay" onchange="renderLog()">
+        <option value="">All payments</option>
+        <option>Cash</option><option>Card</option><option>E-wallet</option>
+      </select>
+      <button class="btn small danger" onclick="clearLog()">Clear log</button>
+    </div>
+    <table id="logTable">
+      <thead>
+        <tr><th>Time</th><th>Order ID</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Line Total</th><th>Payment</th></tr>
+      </thead>
+      <tbody id="logTbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════ ADD ITEM MODAL ══════════ -->
+<div class="modal-bg" id="addModal">
+  <div class="modal">
+    <h3 id="modalTitle">Add menu item</h3>
+    <div class="form-row"><label>Icon (emoji)</label><input id="mIcon" value="☕" maxlength="4"></div>
+    <div class="form-row"><label>Name</label><input id="mName" placeholder="e.g. Latte"></div>
+    <div class="form-row"><label>Category</label><input id="mCat" placeholder="e.g. Coffee"></div>
+    <div class="form-row"><label>Price (RM)</label><input id="mPrice" type="number" step="0.5" min="0" placeholder="0.00"></div>
+    <div class="form-row"><label>Stock quantity</label><input id="mStock" type="number" min="0" placeholder="Leave blank = unlimited"></div>
+    <div class="form-row"><label>Stock unit</label><input id="mUnit" placeholder="e.g. cups, portions"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ RECEIPT MODAL ══════════ -->
+<div class="modal-bg" id="receiptModal">
+  <div class="modal" style="width:340px">
+    <div class="receipt" id="receiptContent"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeReceipt()">Close</button>
+      <button class="btn primary" onclick="printReceipt()">Print</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ──
+let menu = JSON.parse(localStorage.getItem('cafe_menu') || 'null') || [
+  {id:1,icon:'☕',name:'Espresso',cat:'Coffee',price:5.00,stock:null,unit:'cups'},
+  {id:2,icon:'🥛',name:'Flat White',cat:'Coffee',price:9.00,stock:null,unit:'cups'},
+  {id:3,icon:'☕',name:'Latte',cat:'Coffee',price:10.00,stock:null,unit:'cups'},
+  {id:4,icon:'☕',name:'Cappuccino',cat:'Coffee',price:10.00,stock:null,unit:'cups'},
+  {id:5,icon:'🧊',name:'Cold Brew',cat:'Coffee',price:12.00,stock:null,unit:'cups'},
+  {id:6,icon:'🍵',name:'Earl Grey',cat:'Tea',price:7.00,stock:null,unit:'cups'},
+  {id:7,icon:'🍵',name:'Matcha Latte',cat:'Tea',price:12.00,stock:null,unit:'cups'},
+  {id:8,icon:'🌼',name:'Chamomile',cat:'Tea',price:7.00,stock:null,unit:'cups'},
+  {id:9,icon:'🥐',name:'Croissant',cat:'Food',price:6.00,stock:20,unit:'pcs'},
+  {id:10,icon:'🍞',name:'Banana Bread',cat:'Food',price:8.00,stock:15,unit:'pcs'},
+  {id:11,icon:'🥧',name:'Egg Tart',cat:'Food',price:5.00,stock:30,unit:'pcs'},
+  {id:12,icon:'🥑',name:'Avocado Toast',cat:'Food',price:15.00,stock:10,unit:'pcs'},
+  {id:13,icon:'🍋',name:'Lemonade',cat:'Drinks',price:9.00,stock:null,unit:'cups'},
+  {id:14,icon:'🥤',name:'Iced Milo',cat:'Drinks',price:8.00,stock:null,unit:'cups'},
+  {id:15,icon:'🧃',name:'Smoothie',cat:'Drinks',price:14.00,stock:null,unit:'cups'},
+];
+let salesLog = JSON.parse(localStorage.getItem('cafe_log') || '[]');
+let order = {};
+let payMethod = '';
+let activeCat = 'All';
+let editingId = null;
+
+function saveMenu() { localStorage.setItem('cafe_menu', JSON.stringify(menu)); }
+function saveLog()  { localStorage.setItem('cafe_log', JSON.stringify(salesLog)); }
+function getWebhook() { return localStorage.getItem('cafe_webhook') || ''; }
+function saveWebhook(v) {
+  localStorage.setItem('cafe_webhook', v);
+  const pill = document.getElementById('statusPill');
+  pill.textContent = v ? 'URL saved' : 'Not configured';
+  pill.className = 'status-pill' + (v ? ' ok' : '');
+}
+
+// ── INIT ──
+(function init(){
+  const wh = getWebhook();
+  if(wh){ document.getElementById('webhookUrl').value = wh; saveWebhook(wh); }
+  renderPOS();
+  renderMenuEditor();
+  renderLog();
+})();
+
+// ── NAV ──
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+  if(name==='menu') renderMenuEditor();
+  if(name==='log') renderLog();
+}
+
+// ── POS ──
+function renderPOS() {
+  const cats = ['All', ...new Set(menu.map(i=>i.cat))];
+  const catRow = document.getElementById('catRow');
+  catRow.innerHTML = cats.map(c =>
+    `<button class="cat-btn${c===activeCat?' active':''}" onclick="setCat('${c}',this)">${c}</button>`
+  ).join('');
+  renderMenu();
+}
+
+function setCat(c) { activeCat=c; renderPOS(); }
+
+function renderMenu() {
+  const items = activeCat==='All' ? menu : menu.filter(i=>i.cat===activeCat);
+  document.getElementById('menuGrid').innerHTML = items.map(item => {
+    const low = item.stock!==null && item.stock<=5 && item.stock>0;
+    const out = item.stock!==null && item.stock<=0;
+    return `<div class="menu-card${low?' low-stock':''}${out?' out-stock':''}" onclick="addToOrder(${item.id})">
+      <div class="mc-icon">${item.icon}</div>
+      <div class="mc-name">${item.name}</div>
+      <div class="mc-price">RM ${item.price.toFixed(2)}</div>
+      ${item.stock!==null ? `<div class="mc-stock" style="color:${out?'#991b1b':low?'#b45309':'#7a7670'}">${out?'Out of stock':low?`Low: ${item.stock}`:item.stock+' left'}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function addToOrder(id) {
+  const item = menu.find(i=>i.id===id);
+  if(!item || (item.stock!==null && item.stock<=0)) return;
+  order[id] = (order[id]||0)+1;
+  renderOrderPanel();
+}
+
+function changeQty(id, delta) {
+  order[id] = (order[id]||0)+delta;
+  if(order[id]<=0) delete order[id];
+  renderOrderPanel();
+}
+
+function renderOrderPanel() {
+  const ids = Object.keys(order);
+  const scroll = document.getElementById('orderScroll');
+  if(!ids.length) {
+    scroll.innerHTML = '<div class="order-empty">Tap items to add</div>';
+    updateTotals();
+    return;
+  }
+  scroll.innerHTML = ids.map(id => {
+    const item = menu.find(i=>i.id==id);
+    return `<div class="order-row">
+      <span class="or-name">${item.icon} ${item.name}</span>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="changeQty(${id},-1)">−</button>
+        <span class="qty-num">${order[id]}</span>
+        <button class="qty-btn" onclick="changeQty(${id},1)">+</button>
+      </div>
+      <span class="or-price">RM ${(item.price*order[id]).toFixed(2)}</span>
+    </div>`;
+  }).join('');
+  updateTotals();
+}
+
+function updateTotals() {
+  let sub = 0;
+  Object.keys(order).forEach(id => {
+    const item = menu.find(i=>i.id==id);
+    if(item) sub += item.price * order[id];
+  });
+  document.getElementById('subtotal').textContent = 'RM '+sub.toFixed(2);
+  document.getElementById('grandTotal').textContent = 'RM '+sub.toFixed(2);
+  const hasItems = Object.keys(order).length>0;
+  const cb = document.getElementById('chargeBtn');
+  cb.disabled = !(hasItems && payMethod);
+  cb.textContent = hasItems && payMethod ? `Charge RM ${sub.toFixed(2)}` : 'Charge';
+}
+
+function selPay(method, btn) {
+  payMethod = method;
+  document.querySelectorAll('.pay-btn').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  updateTotals();
+}
+
+async function chargeOrder() {
+  const ids = Object.keys(order);
+  if(!ids.length || !payMethod) return;
+  let total = 0;
+  const now = new Date();
+  const ts = now.toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur',hour12:false});
+  const note = document.getElementById('orderNote').value.trim();
+  const orderId = 'ORD-' + now.getTime().toString().slice(-6);
+
+  // Build line items array
+  const lineItems = ids.map(id => {
+    const item = menu.find(i=>i.id==id);
+    const qty = order[id];
+    const lineTotal = item.price * qty;
+    total += lineTotal;
+    return { name:item.name, category:item.cat, qty, unitPrice:item.price, lineTotal };
+  });
+
+  const payload = {
+    orderId, timestamp:ts,
+    lineItems,
+    total:total.toFixed(2),
+    payment:payMethod,
+    note
+  };
+
+  // Deduct stock
+  ids.forEach(id => {
+    const item = menu.find(i=>i.id==id);
+    if(item && item.stock!==null) item.stock = Math.max(0, item.stock - order[id]);
+  });
+  saveMenu();
+
+  // Log locally (one entry per line item for analysis)
+  lineItems.forEach(li => {
+    salesLog.unshift({ id:Date.now(), orderId, timestamp:ts, item:li.name, category:li.category, qty:li.qty, unitPrice:li.unitPrice, lineTotal:li.lineTotal, payment:payMethod, note });
+  });
+  saveLog();
+
+  // Send to Sheets
+  const url = getWebhook();
+  if(url) {
+    document.getElementById('chargeBtn').textContent = 'Sending…';
+    document.getElementById('chargeBtn').disabled = true;
+    try {
+      await fetch(url, { method:'POST', mode:'no-cors', body:JSON.stringify(payload), headers:{'Content-Type':'application/json'} });
+      showToast('Logged to Google Sheets ✓');
+      document.getElementById('statusPill').textContent = 'Connected';
+      document.getElementById('statusPill').className = 'status-pill ok';
+    } catch(e) {
+      showToast('Sheets sync failed — saved locally', true);
+    }
+  } else {
+    showToast('Saved locally (no Sheets URL)');
+  }
+
+  showReceipt(payload, lineItems, total);
+  resetOrder();
+  renderMenu();
+}
+
+function resetOrder() {
+  order = {};
+  payMethod = '';
+  document.getElementById('orderNote').value = '';
+  document.querySelectorAll('.pay-btn').forEach(b=>b.classList.remove('sel'));
+  renderOrderPanel();
+}
+
+// ── RECEIPT ──
+function showReceipt(payload, lineItems, total) {
+  const r = document.getElementById('receiptContent');
+  r.innerHTML = `
+    <div class="r-title">CAFÉ RECEIPT</div>
+    <div style="text-align:center;font-size:11px;margin-bottom:2px">${payload.timestamp}</div>
+    <div style="text-align:center;font-size:10px;margin-bottom:6px;color:#999">${payload.orderId}</div>
+    <div class="r-divider"></div>
+    ${lineItems.map(li=>`<div class="r-row"><span>${li.name} x${li.qty}</span><span>RM ${li.lineTotal.toFixed(2)}</span></div>`).join('')}
+    <div class="r-divider"></div>
+    <div class="r-row r-total"><span>TOTAL</span><span>RM ${total.toFixed(2)}</span></div>
+    <div class="r-row"><span>Payment</span><span>${payload.payment}</span></div>
+    ${payload.note ? `<div style="margin-top:6px;font-size:11px">Note: ${payload.note}</div>` : ''}
+    <div class="r-divider"></div>
+    <div style="text-align:center;font-size:11px">Thank you!</div>
+  `;
+  document.getElementById('receiptModal').classList.add('open');
+}
+
+function closeReceipt() { document.getElementById('receiptModal').classList.remove('open'); }
+function printReceipt() { window.print(); }
+
+// ── MENU EDITOR ──
+function renderMenuEditor() {
+  const tb = document.getElementById('menuTbody');
+  tb.innerHTML = menu.map(item => `
+    <tr>
+      <td><input class="td-input" style="width:48px;text-align:center" value="${item.icon}" onchange="updateItem(${item.id},'icon',this.value)"></td>
+      <td><input class="td-input" value="${item.name}" onchange="updateItem(${item.id},'name',this.value)"></td>
+      <td><input class="td-input" value="${item.cat}" onchange="updateItem(${item.id},'cat',this.value)"></td>
+      <td><input class="td-input" style="width:80px" type="number" step="0.5" value="${item.price}" onchange="updateItem(${item.id},'price',parseFloat(this.value))"></td>
+      <td><input class="td-input" style="width:70px" type="number" value="${item.stock??''}" placeholder="∞" onchange="updateItem(${item.id},'stock',this.value===''?null:parseInt(this.value))"></td>
+      <td><input class="td-input" value="${item.unit||''}" placeholder="cups" onchange="updateItem(${item.id},'unit',this.value)"></td>
+      <td><button class="btn small danger" onclick="deleteItem(${item.id})">Remove</button></td>
+    </tr>
+  `).join('');
+}
+
+function updateItem(id, field, val) {
+  const item = menu.find(i=>i.id===id);
+  if(item) { item[field]=val; saveMenu(); renderPOS(); }
+}
+
+function deleteItem(id) {
+  if(!confirm('Remove this item?')) return;
+  menu = menu.filter(i=>i.id!==id);
+  saveMenu(); renderMenuEditor(); renderPOS();
+}
+
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Add menu item';
+  ['mIcon','mName','mCat','mPrice','mStock','mUnit'].forEach(id => document.getElementById(id).value = id==='mIcon'?'☕':'');
+  document.getElementById('addModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('addModal').classList.remove('open'); }
+
+function saveItem() {
+  const name = document.getElementById('mName').value.trim();
+  if(!name) { showToast('Name is required', true); return; }
+  const item = {
+    id: editingId || Date.now(),
+    icon: document.getElementById('mIcon').value || '☕',
+    name,
+    cat: document.getElementById('mCat').value.trim() || 'Other',
+    price: parseFloat(document.getElementById('mPrice').value)||0,
+    stock: document.getElementById('mStock').value==='' ? null : parseInt(document.getElementById('mStock').value),
+    unit: document.getElementById('mUnit').value.trim() || 'pcs',
+  };
+  if(editingId) { const idx=menu.findIndex(i=>i.id===editingId); menu[idx]=item; }
+  else menu.push(item);
+  saveMenu(); renderMenuEditor(); renderPOS(); closeModal();
+  showToast(editingId ? 'Item updated' : 'Item added ✓');
+}
+
+// ── IMPORT FROM SHEETS ──
+async function importFromSheets() {
+  const url = getWebhook();
+  if(!url) { showToast('Enter your Apps Script URL first', true); return; }
+  showToast('Fetching menu from Sheets…');
+  try {
+    const res = await fetch(url+'?action=getMenu');
+    const data = await res.json();
+    if(data && Array.isArray(data.menu)) {
+      menu = data.menu;
+      saveMenu(); renderMenuEditor(); renderPOS();
+      showToast(`Imported ${menu.length} items ✓`);
+    } else { showToast('No menu data returned', true); }
+  } catch(e) { showToast('Import failed — check URL', true); }
+}
+
+// ── SALES LOG ──
+function renderLog() {
+  const fd = document.getElementById('filterDate').value;
+  const fp = document.getElementById('filterPay').value;
+  let filtered = salesLog.filter(s => {
+    if(fd) {
+      const d = new Date(s.id);
+      const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      if(ds!==fd) return false;
+    }
+    if(fp && s.payment!==fp) return false;
+    return true;
+  });
+
+  // Stats: sum lineTotal, count unique orderIds
+  const revenue = filtered.reduce((a,s)=>a+parseFloat(s.lineTotal||0),0);
+  const uniqueOrders = new Set(filtered.map(s=>s.orderId)).size;
+  const avg = uniqueOrders ? revenue/uniqueOrders : 0;
+  // Top item by qty
+  const itemQtys = {};
+  filtered.forEach(s=>{ itemQtys[s.item]=(itemQtys[s.item]||0)+parseInt(s.qty||1); });
+  const topItem = Object.entries(itemQtys).sort((a,b)=>b[1]-a[1])[0];
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="stat-card"><div class="sc-label">Revenue</div><div class="sc-val">RM ${revenue.toFixed(2)}</div></div>
+    <div class="stat-card"><div class="sc-label">Orders</div><div class="sc-val">${uniqueOrders}</div></div>
+    <div class="stat-card"><div class="sc-label">Avg order</div><div class="sc-val">RM ${avg.toFixed(2)}</div></div>
+    <div class="stat-card"><div class="sc-label">Top item</div><div class="sc-val" style="font-size:14px">${topItem?topItem[0]:'—'}</div></div>
+  `;
+
+  const tb = document.getElementById('logTbody');
+  if(!filtered.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">No transactions yet</td></tr>'; return; }
+  tb.innerHTML = filtered.map(s => `
+    <tr>
+      <td style="white-space:nowrap;font-size:11px">${s.timestamp}</td>
+      <td style="font-size:11px;color:var(--muted)">${s.orderId||''}</td>
+      <td>${s.item||''}</td>
+      <td style="text-align:center">${s.qty||1}</td>
+      <td>RM ${parseFloat(s.unitPrice||0).toFixed(2)}</td>
+      <td style="font-weight:700">RM ${parseFloat(s.lineTotal||0).toFixed(2)}</td>
+      <td><span class="badge ${s.payment==='Cash'?'cash':s.payment==='Card'?'card':'ewallet'}">${s.payment}</span></td>
+    </tr>
+  `).join('');
+}
+
+function clearLog() {
+  if(!confirm('Clear all local sales? (Google Sheets data is unaffected)')) return;
+  salesLog = []; saveLog(); renderLog(); showToast('Log cleared');
+}
+
+function exportCSV() {
+  if(!salesLog.length) { showToast('No sales to export', true); return; }
+  const rows = [
+    ['Timestamp','Order ID','Item','Category','Qty','Unit Price (RM)','Line Total (RM)','Payment','Note'],
+    ...salesLog.map(s=>[s.timestamp,s.orderId||'',s.item||'',s.category||'',s.qty||1,s.unitPrice||0,s.lineTotal||0,s.payment,s.note||''])
+  ];
+  const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'cafe-sales.csv'; a.click();
+}
+
+// ── TOAST ──
+function showToast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast'+(err?' err':'');
+  requestAnimationFrame(()=>{ t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3000); });
+}
+</script>
+</body>
+</html>
